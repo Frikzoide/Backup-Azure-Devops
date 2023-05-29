@@ -97,7 +97,7 @@ $libraries | ForEach-Object {
     $libraryContent | ConvertTo-Json | Out-File "$backupDirectory\Library_$libraryName.json"
 }
 # Criar a conexão com a conta de armazenamento do Azure
-$Context = New-AzStorageContext -StorageAccountName $StorageAccountName -StorageAccountKey $StorageAccountKey
+$Context = New-AzStorageContext -ConnectionString $ConnectionString
 
 # Fazer upload dos arquivos no blob container
 Set-AzStorageBlobContent -Context $Context -Container $StorageContainerName -Blob $backupFileNameGit -File $backupFilePathGit -Force
