@@ -34,9 +34,8 @@ New-Item -ItemType Directory -Force -Path $backupDirectory | Out-Null
 # Gerar o nome do arquivo de backup
 $dt = Get-Date -Format 'yyyyMMdd-HHmmss'
 $backupFileNameGit = "git-$($dt).zip"
-$backupFileNameWorkItem = "workitem-$($dt).csv"
 $backupFilePathGit = Join-Path -Path $backupDirectory -ChildPath $backupFileNameGit
-$backupFilePathWorkItem = Join-Path -Path $backupDirectory -ChildPath $backupFileNameWorkItem
+
 
 # Conectar ao Azure DevOps usando o PAT
 Set-VSTeamAccount -Account $OrgName -PersonalAccessToken $PAT
@@ -48,7 +47,7 @@ foreach ($RepoName in $RepoNames) {
 }
 
 # Criar um arquivo zip com os repositórios clonados
-Compress-Archive -Path "$backupDirectory\*" -DestinationPath $backupFilePathGit -Force
+#Compress-Archive -Path "$backupDirectory\*" -DestinationPath $backupFilePathGit -Force
 
 # Obter os work items dos boards usando o comando Get-VSTeamWorkItem
 $WorkItems = Get-VSTeamWorkItemType -ProjectName $ProjectName 
@@ -57,51 +56,54 @@ $WorkItems = Get-VSTeamWorkItemType -ProjectName $ProjectName
 $WorkItems | Export-Csv -Path $backupFilePathWorkItem -NoTypeInformation
 
 # Definir o contexto do Azure DevOps
-$token = [System.Convert]::ToBase64String([System.Text.Encoding]::ASCII.GetBytes(":$($personalAccessToken)"))
+$token = [System.Convert]::ToBase64String([System.Text.Encoding]::ASCII.GetBytes(":$($PAT)"))
 $header = @{Authorization = "Basic $token" }
-$uriBase = "https://dev.azure.com/$organization/$project/_apis"
+$uriBase = "https://dev.azure.com/$($OrgName)/$([uri]::EscapeDataString($ProjectName))"
 
 # Backup dos pipelines
-$pipelinesUrl = "$uriBase/pipelines?api-version=6.0-preview.1"
+$pipelinesUrl = "$uriBase/_build"
 $pipelinesResponse = Invoke-RestMethod -Uri $pipelinesUrl -Headers $header -Method Get
 $pipelines = $pipelinesResponse.value
 $pipelines | ForEach-Object {
     $pipelineName = $_.name
     $pipelineId = $_.id
-    $pipelineUrl = "$uriBase/pipelines/$pipelineId?api-version=6.0-preview.1"
+    $pipelineUrl = "$uriBase/_build"
     $pipelineContent = Invoke-RestMethod -Uri $pipelineUrl -Headers $header -Method Get
     $pipelineContent | ConvertTo-Json | Out-File "$backupDirectory\Pipeline_$pipelineName.json"
 }
 
 # Backup dos releases
-$releasesUrl = "$uriBase/release/releases?api-version=6.0"
+$releasesUrl = "$uriBase/_release?_a=releases&view=mine&definitionId=1"
 $releasesResponse = Invoke-RestMethod -Uri $releasesUrl -Headers $header -Method Get
 $releases = $releasesResponse.value
 $releases | ForEach-Object {
     $releaseName = $_.name
     $releaseId = $_.id
-    $releaseUrl = "$uriBase/release/releases/$releaseId?api-version=6.0"
+    $releaseUrl = "$uriBase/_release?_a=releases&view=mine&definitionId=1"
     $releaseContent = Invoke-RestMethod -Uri $releaseUrl -Headers $header -Method Get
     $releaseContent | ConvertTo-Json | Out-File "$backupDirectory\Release_$releaseName.json"
 }
 
 # Backup das libraries
-$librariesUrl = "$uriBase/distributedtask/taskgroups?api-version=6.0-preview.1"
+$librariesUrl = "$uriBase/_library?itemType=VariableGroups"
 $librariesResponse = Invoke-RestMethod -Uri $librariesUrl -Headers $header -Method Get
 $libraries = $librariesResponse.value
 $libraries | ForEach-Object {
     $libraryName = $_.name
     $libraryId = $_.id
-    $libraryUrl = "$uriBase/distributedtask/taskgroups/$libraryId?api-version=6.0-preview.1"
+    $libraryUrl = "$uriBase/_library?itemType=VariableGroups"
     $libraryContent = Invoke-RestMethod -Uri $libraryUrl -Headers $header -Method Get
     $libraryContent | ConvertTo-Json | Out-File "$backupDirectory\Library_$libraryName.json"
 }
+
+# Criar um arquivo zip com os repositórios clonados
+Compress-Archive -Path "$backupDirectory\*" -DestinationPath $backupFilePathGit -Force
+
 # Criar a conexão com a conta de armazenamento do Azure
 $Context = New-AzStorageContext -ConnectionString $ConnectionString
 
 # Fazer upload dos arquivos no blob container
-Set-AzStorageBlobContent -Context $Context -Container $StorageContainerName -Blob $backupFileNameGit -File $backupFilePathGit -Force
-Set-AzStorageBlobContent -Context $Context -Container $StorageContainerName -Blob $backupFileNameWorkItem -File $backupFilePathWorkItem -Force
+Set-AzStorageBlobContent -Context $Context -Container $StorageContainerName -Blob $backupFileNameGit -File $backupFilePathGit -StandardBlobTier Cool -Force
 
 # Remover os arquivos temporários da pasta de backup
 Remove-Item -Path "$backupDirectory\*" -Recurse -Force
