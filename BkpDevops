@@ -56,6 +56,46 @@ $WorkItems = Get-VSTeamWorkItemType -ProjectName $ProjectName
 # Exportar os dados dos work items para um arquivo csv
 $WorkItems | Export-Csv -Path $backupFilePathWorkItem -NoTypeInformation
 
+# Definir o contexto do Azure DevOps
+$token = [System.Convert]::ToBase64String([System.Text.Encoding]::ASCII.GetBytes(":$($personalAccessToken)"))
+$header = @{Authorization = "Basic $token" }
+$uriBase = "https://dev.azure.com/$organization/$project/_apis"
+
+# Backup dos pipelines
+$pipelinesUrl = "$uriBase/pipelines?api-version=6.0-preview.1"
+$pipelinesResponse = Invoke-RestMethod -Uri $pipelinesUrl -Headers $header -Method Get
+$pipelines = $pipelinesResponse.value
+$pipelines | ForEach-Object {
+    $pipelineName = $_.name
+    $pipelineId = $_.id
+    $pipelineUrl = "$uriBase/pipelines/$pipelineId?api-version=6.0-preview.1"
+    $pipelineContent = Invoke-RestMethod -Uri $pipelineUrl -Headers $header -Method Get
+    $pipelineContent | ConvertTo-Json | Out-File "$backupDirectory\Pipeline_$pipelineName.json"
+}
+
+# Backup dos releases
+$releasesUrl = "$uriBase/release/releases?api-version=6.0"
+$releasesResponse = Invoke-RestMethod -Uri $releasesUrl -Headers $header -Method Get
+$releases = $releasesResponse.value
+$releases | ForEach-Object {
+    $releaseName = $_.name
+    $releaseId = $_.id
+    $releaseUrl = "$uriBase/release/releases/$releaseId?api-version=6.0"
+    $releaseContent = Invoke-RestMethod -Uri $releaseUrl -Headers $header -Method Get
+    $releaseContent | ConvertTo-Json | Out-File "$backupDirectory\Release_$releaseName.json"
+}
+
+# Backup das libraries
+$librariesUrl = "$uriBase/distributedtask/taskgroups?api-version=6.0-preview.1"
+$librariesResponse = Invoke-RestMethod -Uri $librariesUrl -Headers $header -Method Get
+$libraries = $librariesResponse.value
+$libraries | ForEach-Object {
+    $libraryName = $_.name
+    $libraryId = $_.id
+    $libraryUrl = "$uriBase/distributedtask/taskgroups/$libraryId?api-version=6.0-preview.1"
+    $libraryContent = Invoke-RestMethod -Uri $libraryUrl -Headers $header -Method Get
+    $libraryContent | ConvertTo-Json | Out-File "$backupDirectory\Library_$libraryName.json"
+}
 # Criar a conexão com a conta de armazenamento do Azure
 $Context = New-AzStorageContext -StorageAccountName $StorageAccountName -StorageAccountKey $StorageAccountKey
 
